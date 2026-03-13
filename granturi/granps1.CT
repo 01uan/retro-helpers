@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CheatTable CheatEngineTableVersion="46">
+  <CheatEntries>
+    <CheatEntry>
+      <ID>5</ID>
+      <Description>"time"</Description>
+      <VariableType>4 Bytes</VariableType>
+      <Address>30693DBC</Address>
+    </CheatEntry>
+    <CheatEntry>
+      <ID>6</ID>
+      <Description>"points"</Description>
+      <ShowAsSigned>0</ShowAsSigned>
+      <VariableType>Byte</VariableType>
+      <Address>304B68A6</Address>
+    </CheatEntry>
+    <CheatEntry>
+      <ID>8</ID>
+      <Description>"money"</Description>
+      <VariableType>4 Bytes</VariableType>
+      <Address>3009B8F4</Address>
+    </CheatEntry>
+    <CheatEntry>
+      <ID>12</ID>
+      <Description>"AUTODRIVE"</Description>
+      <ShowAsSigned>0</ShowAsSigned>
+      <VariableType>Byte</VariableType>
+      <Address>300B6F48</Address>
+    </CheatEntry>
+  </CheatEntries>
+  <CheatCodes>
+    <CodeEntry>
+      <Description>Code :mov [rax+r12],r8b</Description>
+      <AddressString>mednafen_psx_libretro.dll+2BEB4E</AddressString>
+      <Before>
+        <Byte>E4</Byte>
+        <Byte>FF</Byte>
+        <Byte>FF</Byte>
+        <Byte>1F</Byte>
+        <Byte>00</Byte>
+      </Before>
+      <Actual>
+        <Byte>46</Byte>
+        <Byte>88</Byte>
+        <Byte>04</Byte>
+        <Byte>20</Byte>
+      </Actual>
+      <After>
+        <Byte>48</Byte>
+        <Byte>83</Byte>
+        <Byte>C4</Byte>
+        <Byte>30</Byte>
+        <Byte>41</Byte>
+      </After>
+    </CodeEntry>
+  </CheatCodes>
+  <UserdefinedSymbols/>
+  <Comments>WHEN THE COUNTDOWN STARTS U SET AUTODRIVE TO 1
+</Comments>
+</CheatTable>
