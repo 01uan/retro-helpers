@@ -209,6 +209,22 @@ class MEMORY_BASIC_INFORMATION(ctypes.Structure):
     ]
 
 
+class SYSTEM_INFO(ctypes.Structure):
+    _fields_ = [
+        ('wProcessorArchitecture', wintypes.WORD),
+        ('wReserved', wintypes.WORD),
+        ('dwPageSize', wintypes.DWORD),
+        ('lpMinimumApplicationAddress', ctypes.c_void_p),
+        ('lpMaximumApplicationAddress', ctypes.c_void_p),
+        ('dwActiveProcessorMask', ctypes.c_size_t),
+        ('dwNumberOfProcessors', wintypes.DWORD),
+        ('dwProcessorType', wintypes.DWORD),
+        ('dwAllocationGranularity', wintypes.DWORD),
+        ('wProcessorLevel', wintypes.WORD),
+        ('wProcessorRevision', wintypes.WORD),
+    ]
+
+
 def attach():
     """Attach to RetroArch process."""
     try:
@@ -236,14 +252,50 @@ def read_hand_at(pm, base):
         return None
 
 
-def find_all_psx_candidates(pm):
-    """Find ALL memory regions with valid hand card data at the known offset."""
+def get_max_application_address():
+    """Return the highest user-mode address Windows reports for this process."""
+    kernel32 = ctypes.windll.kernel32
+    system_info = SYSTEM_INFO()
+    kernel32.GetNativeSystemInfo(ctypes.byref(system_info))
+    return int(system_info.lpMaximumApplicationAddress)
+
+
+def is_readable_region(protect):
+    """Return True when a region is readable and not guarded/no-access."""
+    readable = {0x02, 0x04, 0x08, 0x20, 0x40, 0x80}
+    stripped = protect & 0xFF
+    if protect & 0x100 or stripped == 0x01:
+        return False
+    return stripped in readable
+
+
+def is_plausible_hand(cards, strict=True):
+    """Validate whether the 5 card values look like a duel hand."""
+    if not cards:
+        return False
+
+    nonzero = [card_id for card_id in cards if card_id != 0]
+    if not nonzero:
+        return False
+
+    if strict:
+        return all(1 <= c <= 722 for c in cards) and len(set(cards)) > 1
+
+    valid_count = sum(1 for c in cards if 1 <= c <= 722)
+    return valid_count >= 3 and len(set(nonzero)) > 1
+
+
+def find_all_psx_candidates(pm, strict=True):
+    """Find memory regions with plausible hand card data at the known offset."""
     MEM_COMMIT = 0x1000
     kernel32 = ctypes.windll.kernel32
     address = 0
+    max_address = get_max_application_address()
     candidates = []
+    regions_scanned = 0
+    last_progress = time.time()
 
-    while address < 0x7FFFFFFFFFFF:
+    while address < max_address:
         mbi = MEMORY_BASIC_INFORMATION()
         result = kernel32.VirtualQueryEx(
             pm.process_handle, ctypes.c_ulonglong(address),
@@ -255,18 +307,30 @@ def find_all_psx_candidates(pm):
             address += 0x1000
             continue
 
+        regions_scanned += 1
+        now = time.time()
+        if now - last_progress >= 1.5:
+            print(
+                f"  Scanned {regions_scanned} regions; "
+                f"address 0x{mbi.BaseAddress:X}; candidates {len(candidates)}",
+                end='\r',
+                flush=True,
+            )
+            last_progress = now
+
         if (mbi.State == MEM_COMMIT and
                 mbi.RegionSize >= PSX_RAM_SIZE and
-                mbi.Protect in (0x02, 0x04, 0x08, 0x40)):
+                is_readable_region(mbi.Protect)):
             base = mbi.BaseAddress
             cards = read_hand_at(pm, base)
-            if cards and all(1 <= c <= 722 for c in cards):
-                # Skip obvious false positives: all cards the same
-                if len(set(cards)) == 1:
-                    continue
+            if is_plausible_hand(cards, strict=strict):
                 candidates.append((base, mbi.RegionSize, cards))
 
         address = mbi.BaseAddress + mbi.RegionSize
+
+    if regions_scanned:
+        print(' ' * 80, end='\r')
+        print(f"  Scanned {regions_scanned} regions; found {len(candidates)} candidates.")
 
     # Sort: prefer regions that are exactly 2MB (real PSX RAM mirrors)
     candidates.sort(key=lambda c: (0 if c[1] == PSX_RAM_SIZE else 1, c[0]))
@@ -275,7 +339,10 @@ def find_all_psx_candidates(pm):
 
 def find_psx_ram_base(pm):
     """Find the live PSX RAM base. Uses two reads to detect which region is live."""
-    candidates = find_all_psx_candidates(pm)
+    candidates = find_all_psx_candidates(pm, strict=True)
+    if not candidates:
+        print("No strict match found; retrying with relaxed hand validation...")
+        candidates = find_all_psx_candidates(pm, strict=False)
     if not candidates:
         return None
 
@@ -300,7 +367,7 @@ def find_psx_ram_base(pm):
 
     print("\nDetecting live region... play/draw a card or press a button in-game.")
     # Snapshot current values
-    snapshots = {base: list(cards) for base, rsize, cards in candidates}
+    snapshots = {base: list(cards) for base, rsize, cards in unique_list}
     try:
         for _ in range(120):  # Wait up to 60 seconds
             time.sleep(0.5)
